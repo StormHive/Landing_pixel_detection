@@ -1,3 +1,6 @@
+import re 
+import time
+import csv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -7,145 +10,148 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException
 
-# from seleniumwire import webdriver
-import re 
-import time
-
-def is_element_invisible(driver, element):
-    # Use JavaScript to check if the element is visible
-    return driver.execute_script(
-        "var style = window.getComputedStyle(arguments[0]);"
-        "return style || style.display === 'none' || style.opacity === '0' || style.visibility === 'hidden';",
-        element
-    )
-
-def find_landing_pixels(url):
-    # Configure Chrome options
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Run Chrome in headless mode (without opening GUI)
-
-    # Set the path to the ChromeDriver executable
-    driver = webdriver.Chrome()
-    # Initialize the Chrome driver
-
-    try:
-        # Navigate to the specified URL
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-        driver.get(url)
-
-        # Wait for the page to load completely
-        time.sleep(5)  # Adjust the sleep time as needed
-
-        html_source = driver.page_source
-
-        # Find all script tags on the page
-        script_tags = driver.find_elements(By.TAG_NAME, 'script')
-
-        # Find all image tags on the page
-        img_tags = driver.find_elements(By.TAG_NAME, 'img')
-
-        # Find all iframe tags on the page
-        iframe_tags = driver.find_elements(By.TAG_NAME, 'iframe')
-
-        # Initialize a list to store landing pixels
-        landing_pixels = []
-
-        requests = driver.execute_script("""
-            return performance.getEntriesByType('resource').map(function(entry) {
-                return {
-                    url: entry.name,
-                    type: entry.initiatorType
-                };
-            });
-        """)
-        # Define known tracking services
-        tracking_services = {
-            "ip-api.com": "Location and IP tracking",  # Provides information about the user's IP address and location
-            "ipinfo.io": "Location and IP tracking",  # Offers details about the user's IP address and location
-            "whatismybrowser.com": "Browser information tracking",  # Collects information about the user's browser
-            "maxmind.com": "Location and IP tracking",  # Provides geolocation data based on the user's IP address
-            "browserleaks.com": "Browser information tracking",  # Collects various browser-related information
-            "bugsnag.com": "Error tracking and logging",  # Used for error monitoring and tracking on websites
-            "hotjar.com": "User behavior tracking",  # Tracks user interactions and behavior on websites
-            "google-analytics.com": "Website analytics tracking",  # Google Analytics service for tracking website traffic
-            "facebook.com/tr": "Facebook Pixel tracking",  # Facebook Pixel for tracking user interactions on websites
-            "mouseflow.com": "Mouseflow tracking",  # Tracks user behavior and interactions on websites
-            "crazyegg.com": "Crazy Egg tracking",  # Tracks user behavior and interactions on websites
-            "qualtrics.com": "Qualtrics tracking",  # Tracks user behavior and interactions on websites
-            "mixpanel.com": "Mixpanel tracking",  # Tracks user behavior and interactions on websites
-            "segment.com": "Segment tracking",  # Collects and sends data to various analytics and marketing tools
-            "optimizely.com": "Optimizely tracking",  # A/B testing and experimentation platform that tracks user interactions
-            "vwo.com": "VWO tracking",  # A/B testing and conversion optimization platform that tracks user interactions
-            "salesforce.com": "Salesforce Marketing Cloud tracking",  # Tracks customer interactions and engagement for marketing purposes
-            "hubspot.com": "HubSpot tracking",  # Tracks user interactions and engagement for marketing and sales purposes
-            "whatismybrowser.com": "Browser information tracking",  # Collects information about the user's browser
-            "clicktale.com": "User experience analytics",  # Analyzes user interactions to improve website usability
-            "tealium.com": "Tag management and customer data platform",  # Manages tags and integrates customer data
-            "krux.com": "Data management platform",  # Collects and analyzes audience data for marketing purposes
-            "adobe.com/analytics": "Adobe Analytics",  # Adobe's analytics platform for tracking website performance
+class TrackLandingPixe():
+    def __init__(self, url) -> None:
+        self.chrome_options = Options()
+        self.chrome_options.add_argument("--headless")
+        self.driver = webdriver.Chrome()
+        self.landing_pixels = []
+        self.url = url
+        self.csv_file = "Output.csv"
+        self.tracking_services = {
+            "ip-api.com": "Location and IP tracking",  
+            "ipinfo.io": "Location and IP tracking", 
+            "whatismybrowser.com": "Browser information tracking", 
+            "maxmind.com": "Location and IP tracking",  
+            "browserleaks.com": "Browser information tracking", 
+            "bugsnag.com": "Error tracking and logging",
+            "hotjar.com": "User behavior tracking", 
+            "google-analytics.com": "Website analytics tracking", 
+            "facebook.com/tr": "Facebook Pixel tracking",  
+            "mouseflow.com": "Mouseflow tracking", 
+            "crazyegg.com": "Crazy Egg tracking",  
+            "qualtrics.com": "Qualtrics tracking",  
+            "mixpanel.com": "Mixpanel tracking",  
+            "segment.com": "Segment tracking",  
+            "optimizely.com": "Optimizely tracking",  
+            "vwo.com": "VWO tracking",  
+            "salesforce.com": "Salesforce Marketing Cloud tracking", 
+            "hubspot.com": "HubSpot tracking", 
+            "whatismybrowser.com": "Browser information tracking",  
+            "clicktale.com": "User experience analytics",  
+            "tealium.com": "Tag management and customer data platform", 
+            "krux.com": "Data management platform",  
+            "adobe.com/analytics": "Adobe Analytics",  
             "clarity.ms": "User behavior tracking",
         }
-        for request in requests:
-            for service_url, service_description in tracking_services.items():
-                if service_url in request['url']:
-                    landing_pixels.append({service_url:service_description})
+        self.landing_pixel_domain = ["google-analytics", "facebook.com/tr", "facebook.net", "reportWebVitals", 'acebook.com/tr']
+        self.landing_pixel_urls = ['https://connect.facebook.net/en_US/fbevents.js', 'reportWebVitals()', 'new Image()']
 
-        # Iterate over script tags and check for Google Analytics or Facebook Pixel
-        for script in script_tags:
-            try:
-                src = script.get_attribute('src')
-                script_text = script.get_attribute('innerHTML')
-            except StaleElementReferenceException:
-                continue
-            if src:
-                if 'google-analytics' in src or 'facebook.com/tr' in src or 'facebook.net' in src or 'reportWebVitals' in src:
-                    landing_pixels.append(src)
-            #src_match = re.search(r'(\S*)\.src\s*=\s*[\'"]([^\'" >]+\.gif)', script_text)
-            if 'https://connect.facebook.net/en_US/fbevents.js' in script_text or 'new Image()' in script_text:
-                landing_pixels.append(script_text)            
-       
-        #In Facebookpixel in HTML 
-        if 'https://connect.facebook.net/en_US/fbevents.js' in html_source or 'reportWebVitals()' in html_source:
-            landing_pixels.append(html_source)
 
-        # Iterate over img tags and check for Google Analytics or Facebook Pixel
-        for img in img_tags:
+    def is_element_invisible(self,driver, element):
+        return driver.execute_script(
+            "var style = window.getComputedStyle(arguments[0]);"
+            "return style || style.display === 'none' || style.opacity === '0' || style.visibility === 'hidden';",
+            element
+        )
+    
+
+    def add_data_into_csv(self, landing_pixel):
+        with open(self.csv_file, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            for pixel in landing_pixel:
+                writer.writerow([pixel])
+
+
+    def extract_image_tags(self, image_tags):
+        for img in image_tags:
             try:
                 src = img.get_attribute('src')
             except StaleElementReferenceException:
                 continue
             if src:
-                if 'google-analytics' in src or 'facebook.com/tr' in src:
-                    landing_pixels.append(src)
+                for domain in self.landing_pixel_domain:
+                    if domain in src:
+                        self.landing_pixels.append(src)
                 width = img.get_attribute('width')
                 height = img.get_attribute('height')
-                # Check if the image has dimensions 1x1 or 0x0, ends with '.gif', and is visible
-                if width in ['1', '0'] or height in ['1', '0'] or is_element_invisible(driver, img) and src.endswith('.gif'):
-                    landing_pixels.append(src)
+                if (width in ['1', '0'] or height in ['1', '0'] or self.is_element_invisible(self.driver, img)) and src.endswith('.gif'):
+                    self.landing_pixels.append(src)
+    
 
-        # Iterate over iframe tags and check for Google Analytics or Facebook Pixel
-        for iframe in iframe_tags:
-            src = iframe.get_attribute('src')
+    def extract_script_tags(self, script_tags):
+        for script in script_tags:
+            try:
+                src = script.get_attribute('src')
+                script_text = script.get_attribute('innerHTML')
+            except StaleElementReferenceException:
+                print("src Not found")
+                continue
+            if src:
+                for domain in self.landing_pixel_domain:
+                    if domain in src:
+                        self.landing_pixels.append(src)
+            for url in self.landing_pixel_urls:
+                if url in script_text:
+                    self.landing_pixels.append(script_text)     
+
+
+    def extract_requests(self):
+        requests = self.driver.execute_script("""
+                return performance.getEntriesByType('resource').map(function(entry) {
+                    return {
+                        url: entry.name,
+                        type: entry.initiatorType
+                    };
+                });
+            """)
+        for request in requests:
+            for service_url, service_description in self.tracking_services.items():
+                if service_url in request['url']:
+                    self.landing_pixels.append({service_url:service_description})       
+    
+
+    def extract_iframes(self, iframe_tages):
+        for iframe in iframe_tages:
+            try:
+                src = iframe.get_attribute('src')
+            except StaleElementReferenceException:
+                continue
             if src:
                 if 'google-analytics' in src or 'facebook.com/tr' in src:
-                    landing_pixels.append(src)
+                    self.landing_pixels.append(src)
 
-        # Print the found landing pixels
-        if landing_pixels:
-            print("Landing pixels found:")
-            for pixel in landing_pixels:
-                print(pixel)
-        else:
-            print("No landing pixels found.")
 
-    except Exception as e:
-        print("An error occurred:", e)
 
-    finally:
-        # Close the browser
-        driver.quit()
+    def find_landing_pixels(self):
+        try:
+            self.driver.get(self.url)
+            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            html_source = self.driver.page_source
+            script_tags = self.driver.find_elements(By.TAG_NAME, 'script')
+            img_tags = self.driver.find_elements(By.TAG_NAME, 'img')
+            iframe_tags = self.driver.find_elements(By.TAG_NAME, 'iframe')
+            self.extract_iframes(iframe_tags)
+            self.extract_requests()
+            self.extract_script_tags(script_tags=script_tags)
+            self.extract_image_tags(image_tags=img_tags)
+            for url in self.landing_pixel_urls:
+                if url in html_source:
+                    self.landing_pixels.append(html_source)
 
-# Example usage:
-website_url = 'https://www.opera.com/'
-find_landing_pixels(website_url)
+            if len(self.landing_pixels) > 0:
+                print(f"Landing Pixels Found! saved in {self.csv_file}")
+                self.add_data_into_csv(self.landing_pixels)
+            else:
+                print("No Data Found!")
+        except Exception as e:
+            print("An error occurred:", e)
+
+        finally:
+            self.driver.quit()
+
+
+if __name__ == "__main__":
+    website_url = "https://www.opera.com/"
+    landing_pixel_obj = TrackLandingPixe(website_url)
+    landing_pixel_obj.find_landing_pixels()
