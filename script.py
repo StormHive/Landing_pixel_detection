@@ -1,23 +1,24 @@
-import re 
-import time
 import csv
+import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException
 
 class TrackLandingPixe():
     def __init__(self, url) -> None:
-        self.chrome_options = Options()
+        self.chrome_options = webdriver.ChromeOptions()
         self.chrome_options.add_argument("--headless")
-        self.driver = webdriver.Chrome()
-        self.landing_pixels = []
+        self.driver = webdriver.Chrome(options=self.chrome_options)
         self.url = url
+        self.landing_pixels = []
         self.csv_file = "Output.csv"
+        self.PROXIES = [
+            "88.157.149.250:8080",
+            "123.45.67.89:8888",
+            "192.168.1.100:3128",
+        ]
         self.tracking_services = {
             "ip-api.com": "Location and IP tracking",  
             "ipinfo.io": "Location and IP tracking", 
@@ -48,19 +49,20 @@ class TrackLandingPixe():
         self.landing_pixel_urls = ['https://connect.facebook.net/en_US/fbevents.js', 'reportWebVitals()', 'new Image()']
 
 
-    def is_element_invisible(self,driver, element):
+    def is_element_invisible(self, driver, element):
         return driver.execute_script(
             "var style = window.getComputedStyle(arguments[0]);"
             "return style || style.display === 'none' || style.opacity === '0' || style.visibility === 'hidden';",
             element
         )
-    
 
-    def add_data_into_csv(self, landing_pixel):
+    def add_data_into_csv(self, url, landing_pixel):
         with open(self.csv_file, mode='a', newline='') as file:
             writer = csv.writer(file)
+            if file.tell() == 0:  # Check if the file is empty
+                writer.writerow(['URL', 'Pixel'])  # Add header if needed
             for pixel in landing_pixel:
-                writer.writerow([pixel])
+                writer.writerow([url, pixel])
 
 
     def extract_image_tags(self, image_tags):
@@ -122,7 +124,6 @@ class TrackLandingPixe():
                     self.landing_pixels.append(src)
 
 
-
     def find_landing_pixels(self):
         try:
             self.driver.get(self.url)
@@ -131,8 +132,11 @@ class TrackLandingPixe():
             script_tags = self.driver.find_elements(By.TAG_NAME, 'script')
             img_tags = self.driver.find_elements(By.TAG_NAME, 'img')
             iframe_tags = self.driver.find_elements(By.TAG_NAME, 'iframe')
+            time.sleep(3)
             self.extract_iframes(iframe_tags)
+            time.sleep(3)
             self.extract_requests()
+            time.sleep(3)
             self.extract_script_tags(script_tags=script_tags)
             self.extract_image_tags(image_tags=img_tags)
             for url in self.landing_pixel_urls:
@@ -141,7 +145,7 @@ class TrackLandingPixe():
 
             if len(self.landing_pixels) > 0:
                 print(f"Landing Pixels Found! saved in {self.csv_file}")
-                self.add_data_into_csv(self.landing_pixels)
+                self.add_data_into_csv(self.url, self.landing_pixels)
             else:
                 print("No Data Found!")
         except Exception as e:
@@ -152,6 +156,20 @@ class TrackLandingPixe():
 
 
 if __name__ == "__main__":
-    website_url = "https://www.opera.com/"
-    landing_pixel_obj = TrackLandingPixe(website_url)
-    landing_pixel_obj.find_landing_pixels()
+    input_csv_file = "data.csv"
+    output_csv_file = "Output.csv"
+    
+    with open(output_csv_file, 'w', newline='') as output_file:
+        pass
+    
+    with open(input_csv_file, 'r') as file:
+        reader = csv.reader(file)
+        urls = [row[0] for row in reader]
+    
+    for url in urls:
+        print(f"Extracting data from {url}...")
+        landing_pixel_obj = TrackLandingPixe(url)
+        landing_pixel_obj.find_landing_pixels()
+        print()
+
+    print("All data extraction completed.")
